@@ -1,3 +1,4 @@
+const axios = require('axios');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const Investment = require('../models/Investment');
@@ -5,39 +6,147 @@ const { getAuthUrl, getTokensFromCode, fetchTransactionEmails } = require('../se
 const { parseEmail } = require('../services/emailParser');
 const { parseInvestmentEmail } = require('../services/investmentEmailParser');
 const { parseTransactionEmail } = require('../services/claudeService');
+const { generateToken } = require('../middleware/auth');
 
 // @desc    Get Gmail OAuth authorization URL
 // @route   GET /email/auth-url
 // @access  Private
 const getGmailAuthUrl = (req, res) => {
-  const authUrl = getAuthUrl(req.user.id);
+  const state = JSON.stringify({ flow: 'sync', userId: req.user.id });
+  const authUrl = getAuthUrl(state);
   res.json({ success: true, authUrl });
 };
 
-// @desc    Handle Gmail OAuth callback
+// @desc    Handle Gmail OAuth callback (shared by auth sign-in and email sync flows)
 // @route   GET /email/callback
 // @access  Public (called by Google redirect)
 const handleGmailCallback = async (req, res, next) => {
   try {
     const { code, state } = req.query;
-    // state should contain the userId (set when generating auth URL)
     if (!code || !state) {
       return res.status(400).json({ success: false, message: 'Missing code or state.' });
     }
 
+    // State may be plain userId (legacy sync flow) or JSON { flow, userId? }
+    let parsedState = null;
+    try {
+      parsedState = JSON.parse(state);
+    } catch {
+      // Legacy: raw userId string from the old sync flow
+      parsedState = { flow: 'sync', userId: state };
+    }
+
     const tokens = await getTokensFromCode(code);
 
-    // Save tokens to user
-    await User.findByIdAndUpdate(state, {
+    if (parsedState.flow === 'auth') {
+      // ── Google Sign-In / Sign-Up flow ──────────────────────────────────────
+      // Fetch user's Google profile using the access token
+      const profileRes = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: { Authorization: `Bearer ${tokens.access_token}` },
+      });
+      const { email, name } = profileRes.data;
+
+      // Find existing user or create a new one
+      let user = await User.findOne({ email });
+      if (user) {
+        // Update tokens and mark gmail connected even if already registered
+        user.gmailConnected = true;
+        user.gmailTokens = tokens;
+        await user.save();
+      } else {
+        user = await User.create({
+          name: name || email.split('@')[0],
+          email,
+          authProvider: 'google',
+          gmailConnected: true,
+          gmailTokens: tokens,
+        });
+      }
+
+      const token = generateToken(user._id);
+      const userPayload = encodeURIComponent(JSON.stringify({
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        monthlyIncome: user.monthlyIncome,
+        bankBalance: user.bankBalance,
+        liabilities: user.liabilities,
+        currency: user.currency,
+        gmailConnected: user.gmailConnected,
+      }));
+
+      return res.redirect(`moneymind://auth/callback?token=${token}&user=${userPayload}`);
+    }
+
+    // ── Email sync flow (existing behaviour) ────────────────────────────────
+    const userId = parsedState.userId;
+    await User.findByIdAndUpdate(userId, {
       gmailConnected: true,
       gmailTokens: tokens,
     });
 
-    // Redirect to app (deep link for mobile, falling back safely to profile)
     res.redirect(`moneymind://profile?success=true`);
   } catch (error) {
     next(error);
   }
+};
+
+/**
+ * Find-or-merge investment from an email parse result.
+ *
+ * Rules:
+ *  - SIP:         find existing SIP with same name → accumulate amountInvested + units
+ *  - Stock/MF:    find existing holding with same name + type → accumulate units & amount,
+ *                 recalculate weighted-average buy price
+ *  - Sell:        subtract units & amount from existing (don't go below 0)
+ *  - Not found:   create new
+ *
+ * The emailId on the EXISTING record is NOT overwritten — we track the
+ * first email that created it. The new emailId is stored on the transaction
+ * dedup check above, so the email won't be re-processed.
+ */
+const upsertInvestment = async (userId, inv) => {
+  // Normalise name for matching (lowercase, trim extra spaces)
+  const normalizedName = inv.name?.trim().toLowerCase();
+
+  // Find an existing active investment with the same name and type
+  const existing = await Investment.findOne({
+    userId,
+    isActive: { $ne: false },
+    $expr: {
+      $eq: [{ $toLower: { $trim: { input: '$name' } } }, normalizedName],
+    },
+    type: inv.type,
+  });
+
+  if (!existing) {
+    return Investment.create({ userId, ...inv });
+  }
+
+  if (inv.isSell) {
+    // Reduce position on sell
+    existing.units = Math.max(0, (existing.units || 0) - (inv.units || 0));
+    existing.amountInvested = Math.max(0, (existing.amountInvested || 0) - (inv.amountInvested || 0));
+  } else {
+    // Accumulate: weighted-average buy price for stocks/MFs
+    const prevUnits = existing.units || 0;
+    const newUnits = inv.units || 0;
+    const totalUnits = prevUnits + newUnits;
+
+    if (totalUnits > 0 && inv.buyPrice) {
+      existing.buyPrice = (
+        (prevUnits * (existing.buyPrice || 0) + newUnits * inv.buyPrice) / totalUnits
+      );
+    }
+
+    existing.units = totalUnits;
+    existing.amountInvested = (existing.amountInvested || 0) + (inv.amountInvested || 0);
+  }
+
+  // Always update current price if we got a fresher one
+  if (inv.currentPrice) existing.currentPrice = inv.currentPrice;
+
+  return existing.save();
 };
 
 // @desc    Sync emails and parse transactions
@@ -80,12 +189,13 @@ const syncEmails = async (req, res, next) => {
           }
 
           // 2. Try to parse as Investment (Broker trade confirmation)
-          const existingInv = await Investment.findOne({ userId: req.user.id, emailId: email.id });
-          if (!existingInv) {
+          // Skip if this exact email was already processed
+          const alreadyProcessed = await Investment.findOne({ userId: req.user.id, emailId: email.id });
+          if (!alreadyProcessed) {
             const inv = parseInvestmentEmail(email);
             if (inv) {
               try {
-                await Investment.create({ userId: req.user.id, ...inv });
+                await upsertInvestment(req.user.id, inv);
                 parsedInv++;
               } catch (err) {}
             } else {

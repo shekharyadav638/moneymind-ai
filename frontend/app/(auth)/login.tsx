@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Linking,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
@@ -16,12 +17,26 @@ import { GradientButton } from '../../components/ui/GradientButton';
 import { StyledInput } from '../../components/ui/StyledInput';
 import { Colors } from '../../constants/colors';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { authAPI } from '../../services/api';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const { login, isLoading, error, clearError } = useAuthStore();
+
+  const handleGoogleSignIn = async () => {
+    setGoogleLoading(true);
+    try {
+      const response: any = await authAPI.getGoogleAuthUrl();
+      await Linking.openURL(response.authUrl);
+    } catch {
+      Alert.alert('Error', 'Could not start Google sign-in. Please try again.');
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -116,15 +131,16 @@ export default function LoginScreen() {
               <View style={styles.dividerLine} />
             </View>
 
-            {/* Demo login hint */}
+            {/* Google Sign-In */}
             <TouchableOpacity
-              style={styles.demoButton}
-              onPress={() => {
-                setEmail('demo@moneymind.ai');
-                setPassword('demo1234');
-              }}
+              style={styles.googleButton}
+              onPress={handleGoogleSignIn}
+              disabled={googleLoading}
             >
-              <Text style={styles.demoText}>🧪 Fill Demo Credentials</Text>
+              <Text style={styles.googleIcon}>G</Text>
+              <Text style={styles.googleText}>
+                {googleLoading ? 'Opening Google...' : 'Continue with Google'}
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -247,17 +263,27 @@ const styles = StyleSheet.create({
     color: Colors.text.muted,
     fontSize: 12,
   },
-  demoButton: {
-    backgroundColor: 'rgba(108,99,255,0.1)',
-    borderRadius: 12,
-    padding: 12,
+  googleButton: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 13,
     borderWidth: 1,
-    borderColor: 'rgba(108,99,255,0.2)',
+    borderColor: 'rgba(255,255,255,0.15)',
   },
-  demoText: {
-    color: Colors.primary,
-    fontSize: 14,
+  googleIcon: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#4285F4',
+    width: 20,
+    textAlign: 'center',
+  },
+  googleText: {
+    color: '#1a1a1a',
+    fontSize: 15,
     fontWeight: '600',
   },
   footer: {

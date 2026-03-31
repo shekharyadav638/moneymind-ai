@@ -23,6 +23,7 @@ interface AuthState {
   // Actions
   login: (email: string, password: string) => Promise<void>;
   signup: (name: string, email: string, password: string, monthlyIncome?: number) => Promise<void>;
+  loginWithGoogle: (token: string, user: User) => Promise<void>;
   logout: () => Promise<void>;
   loadStoredAuth: () => Promise<void>;
   updateProfile: (data: Partial<User>) => Promise<void>;
@@ -66,6 +67,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ error: err.message || 'Signup failed.', isLoading: false });
       throw err;
     }
+  },
+
+  loginWithGoogle: async (token, user) => {
+    await AsyncStorage.setItem('authToken', token);
+    await AsyncStorage.setItem('user', JSON.stringify(user));
+    set({ token, user, isAuthenticated: true });
   },
 
   logout: async () => {

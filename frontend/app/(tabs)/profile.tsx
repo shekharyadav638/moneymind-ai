@@ -31,19 +31,21 @@ export default function ProfileScreen() {
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [emailSyncing, setEmailSyncing] = useState(false);
   const [derivedBalance, setDerivedBalance] = useState<number | null>(null);
+  const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
 
   useEffect(() => {
     // Fetch real-time computed bank balance
     const fetchBalance = async () => {
       try {
         const response: any = await api.get('/transactions/balance');
-        if (response.data?.success) {
-          setDerivedBalance(response.data.data.currentBalance);
+        // Axios interceptor already unwraps response.data, so response IS the server body
+        if (response?.success) {
+          setDerivedBalance(response.data.currentBalance);
         }
       } catch {}
     };
     fetchBalance();
-  }, [user?.bankBalance]);
+  }, [user?.bankBalance, balanceRefreshKey]);
 
   const handleSave = async () => {
     try {
@@ -98,6 +100,7 @@ export default function ProfileScreen() {
     try {
       const response: any = await emailAPI.syncEmails();
       Alert.alert('Sync Status', response.message);
+      setBalanceRefreshKey((k) => k + 1);
     } catch (err: any) {
       Alert.alert('Sync Failed', err.message || 'Email sync failed.');
     } finally {

@@ -6,6 +6,55 @@
 const { UPI_HANDLE_MAP, MERCHANT_CATEGORIES, TEXT_CATEGORY_PATTERNS } = require('../constants/parserConstants');
 
 /**
+ * Known bank and payment-service sender patterns.
+ * Checked against the email's "From" header BEFORE any content parsing.
+ * A sender match is required — this prevents false positives from
+ * promotional or newsletter emails that mention "payment" or "credit".
+ */
+const KNOWN_BANK_SENDERS = [
+  // HDFC
+  /hdfcbank/i, /hdfc\.com/i,
+  // SBI
+  /\bsbi\b/i, /onlinesbi/i, /sbicard/i,
+  // ICICI
+  /icicibank/i, /icici\.com/i,
+  // Axis
+  /axisbank/i, /axis\.in/i,
+  // Kotak
+  /kotakbank/i, /kotak\.com/i,
+  // Bank of Baroda
+  /bankofbaroda/i, /\bbob\b/i,
+  // PNB
+  /\bpnb\b/i, /punjabnational/i,
+  // Canara
+  /canarabank/i,
+  // IDFC
+  /idfcfirstbank/i, /idfc\.com/i,
+  // IndusInd
+  /indusind/i,
+  // Yes Bank
+  /yesbank/i,
+  // Federal Bank
+  /federalbank/i,
+  // RBL
+  /rblbank/i,
+  // UPI / payment platforms
+  /paytm/i,
+  /phonepe/i,
+  /googlepay/i, /gpay/i,
+  /amazonpay/i,
+  /razorpay/i,
+  /\bbhim\b/i,
+  // Generic bank alert keywords in sender address
+  /alerts@/i, /notify@/i, /noreply@/i, /donotreply@/i, /transactions@/i,
+];
+
+/**
+ * Returns true if the email "From" header matches any known bank/payment sender.
+ */
+const isKnownBankSender = (from = '') => KNOWN_BANK_SENDERS.some((re) => re.test(from));
+
+/**
  * Given a raw merchant string (may be a UPI ID or messy description),
  * return a clean, readable name.
  * e.g. "paytmqr65c79z@ptys"  → "Paytm"
@@ -83,12 +132,21 @@ const getCategoryFromMerchant = (merchant, fullText, txnType) => {
 /**
  * Rule-based parser: extract a transaction object from email fields.
  * Returns null if the email doesn't look like a transaction.
+ * @param {string} subject
+ * @param {string} body
+ * @param {string} snippet
+ * @param {string} from  - The "From" header value
  */
-const ruleBasedParse = (subject, body, snippet) => {
+const ruleBasedParse = (subject, body, snippet, from = '') => {
+  // Primary gate: sender must be a known bank or payment service.
+  // This eliminates promotional/newsletter emails that happen to mention
+  // "payment" or "credit" in passing.
+  if (!isKnownBankSender(from)) return null;
+
   const fullText = `${subject} ${snippet} ${body}`;
   const fullTextLower = fullText.toLowerCase();
 
-  // Quick gate: must contain at least one transaction keyword
+  // Secondary gate: content must still mention a transaction keyword
   const transactionKeywords = ['debit', 'credit', 'spent', 'paid', 'received', 'transaction', 'transfer', 'payment', 'rs.', 'inr', '₹'];
   if (!transactionKeywords.some(kw => fullTextLower.includes(kw))) return null;
 
@@ -147,15 +205,18 @@ const ruleBasedParse = (subject, body, snippet) => {
 };
 
 /**
- * Main entry point — rule-based first, optional AI fallback
+ * Main entry point — rule-based first, optional AI fallback.
+ * Sender check is the primary gate; only known bank/payment senders proceed.
  */
 const parseEmail = async (email, useAI = false, claudeParser = null) => {
-  const ruleResult = ruleBasedParse(email.subject, email.body, email.snippet);
+  // Pass from so ruleBasedParse can do the sender check
+  const ruleResult = ruleBasedParse(email.subject, email.body, email.snippet, email.from);
   if (ruleResult) {
     return { ...ruleResult, date: email.date, source: 'email', emailId: email.id, rawEmailSubject: email.subject };
   }
 
-  if (useAI && claudeParser) {
+  // AI fallback only if sender is known — don't waste API calls on random emails
+  if (useAI && claudeParser && isKnownBankSender(email.from)) {
     const aiResult = await claudeParser(email.subject, email.snippet || email.body.slice(0, 500));
     if (aiResult.isTransaction) {
       return { ...aiResult, date: email.date || new Date(), source: 'email', emailId: email.id, rawEmailSubject: email.subject };
@@ -165,4 +226,4 @@ const parseEmail = async (email, useAI = false, claudeParser = null) => {
   return null;
 };
 
-module.exports = { parseEmail, ruleBasedParse, cleanMerchantName, getCategoryFromMerchant };
+module.exports = { parseEmail, ruleBasedParse, cleanMerchantName, getCategoryFromMerchant, isKnownBankSender };

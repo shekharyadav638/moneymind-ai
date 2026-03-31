@@ -52,17 +52,27 @@ const getGmailClient = (tokens) => {
 const fetchTransactionEmails = async (tokens, maxResults = 50, afterDate = null) => {
   const gmail = getGmailClient(tokens);
 
-  // Build search query for financial emails
-  const bankSenders = [
-    'sbi', 'hdfc', 'icici', 'axis', 'kotak', 'paytm', 'phonepe', 'gpay',
-    'amazonpay', 'razorpay', 'alerts@', 'noreply@hdfcbank', 'notify@',
-    'transaction', 'debit', 'credit', 'payment', 'upi'
+  // Filter by known bank / payment-service senders so we don't scan unrelated emails.
+  // Gmail supports partial-domain matching inside from:()
+  const BANK_SENDER_TERMS = [
+    // Indian banks
+    'hdfcbank', 'sbi', 'onlinesbi', 'icicibank', 'axisbank', 'kotakbank',
+    'bankofbaroda', 'bob', 'pnb', 'punjabnational', 'canarabank',
+    'idfcfirstbank', 'indusind', 'yesbank', 'federalbank', 'rblbank',
+    'unionbankofindia', 'bankofindia', 'centralbankofindia',
+    // UPI / payment platforms
+    'paytm', 'phonepe', 'gpay', 'googlepay', 'amazonpay', 'razorpay', 'bhim',
+    // Common alert sender keywords used by banks
+    'alerts', 'notify', 'noreply', 'donotreply',
   ];
 
-  let query = '(subject:(debit OR credit OR payment OR transaction OR spent OR debited OR credited OR UPI)) ';
+  const fromQuery = `from:(${BANK_SENDER_TERMS.join(' OR ')})`;
+  let query = `${fromQuery} (debit OR credit OR debited OR credited OR paid OR payment OR transaction OR spent OR UPI) `;
   if (afterDate) {
-    const d = new Date(afterDate);
-    query += `after:${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+    // Use Unix timestamp (seconds) for second-level precision — avoids re-fetching
+    // emails from earlier in the same day on incremental syncs
+    const unixSeconds = Math.floor(new Date(afterDate).getTime() / 1000);
+    query += `after:${unixSeconds}`;
   } else {
     // Default: first day of the current month
     const d = new Date();

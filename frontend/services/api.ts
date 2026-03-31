@@ -50,6 +50,7 @@ export const authAPI = {
   getMe: () => api.get('/auth/me'),
   updateProfile: (data: Partial<{ name: string; monthlyIncome: number; bankBalance: number; liabilities: number; currency: string }>) =>
     api.put('/auth/me', data),
+  getGoogleAuthUrl: () => api.get('/auth/google-url'),
 };
 
 // ─── Transactions ─────────────────────────────────────────────────────────────

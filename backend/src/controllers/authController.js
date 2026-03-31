@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const { generateToken } = require('../middleware/auth');
+const { getAuthUrl } = require('../services/gmailService');
 
 // @desc    Register a new user
 // @route   POST /auth/signup
@@ -7,6 +8,10 @@ const { generateToken } = require('../middleware/auth');
 const signup = async (req, res, next) => {
   try {
     const { name, email, password, monthlyIncome } = req.body;
+
+    if (!password || password.length < 6) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters.' });
+    }
 
     // Check if user already exists
     const existingUser = await User.findOne({ email });
@@ -19,6 +24,7 @@ const signup = async (req, res, next) => {
       name,
       email,
       password,
+      authProvider: 'local',
       monthlyIncome: monthlyIncome || 0,
     });
 
@@ -110,7 +116,10 @@ const updateProfile = async (req, res, next) => {
     const updates = {};
     if (name) updates.name = name;
     if (monthlyIncome !== undefined) updates.monthlyIncome = monthlyIncome;
-    if (bankBalance !== undefined) updates.bankBalance = bankBalance;
+    if (bankBalance !== undefined) {
+      updates.bankBalance = bankBalance;
+      updates.bankBalanceLastSet = new Date();
+    }
     if (liabilities !== undefined) updates.liabilities = liabilities;
     if (currency) updates.currency = currency;
 
@@ -125,4 +134,14 @@ const updateProfile = async (req, res, next) => {
   }
 };
 
-module.exports = { signup, login, getMe, updateProfile };
+// @desc    Get Google OAuth URL for sign-in/sign-up (no JWT required)
+// @route   GET /auth/google-url
+// @access  Public
+const getGoogleAuthUrl = (_req, res) => {
+  // Encode flow type in state so the shared callback can route correctly
+  const state = JSON.stringify({ flow: 'auth' });
+  const authUrl = getAuthUrl(state);
+  res.json({ success: true, authUrl });
+};
+
+module.exports = { signup, login, getMe, updateProfile, getGoogleAuthUrl };
