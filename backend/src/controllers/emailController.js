@@ -78,13 +78,16 @@ const handleGmailCallback = async (req, res, next) => {
       const deepLink = `moneymind:///callback?token=${token}&user=${userPayload}`;
       return res.send(`<!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><title>Signing you in...</title></head>
-<body style="background:#0A0A1A;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:16px;">
-  <p style="font-size:18px;">Signing you in to MoneyMind AI...</p>
-  <a id="deeplink" href="${deepLink}" style="display:none;">open</a>
-  <script>
-    document.getElementById('deeplink').click();
-  </script>
+<head><meta charset="utf-8"><title>Signing you in...</title>
+<style>
+  body{background:#0A0A1A;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:20px;text-align:center;padding:24px;}
+  .btn{background:#6C63FF;color:#fff;border:none;border-radius:12px;padding:16px 32px;font-size:16px;font-weight:600;text-decoration:none;cursor:pointer;}
+</style>
+</head>
+<body>
+  <p style="font-size:18px;font-weight:600;">Google sign-in successful!</p>
+  <p style="color:#888;font-size:14px;">Tap the button below to open MoneyMind AI</p>
+  <a class="btn" href="${deepLink}">Open MoneyMind AI →</a>
 </body>
 </html>`);
     }
