@@ -28,7 +28,9 @@
           "autoVerify": true,
           "data": [
             {
-              "scheme": "moneymind"
+              "scheme": "https",
+              "host": "moneymind.n8nbyshekhar.online",
+              "pathPrefix": "/app"
             }
           ],
           "category": ["BROWSABLE", "DEFAULT"]

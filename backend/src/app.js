@@ -53,6 +53,9 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
+// ─── Static files (.well-known for App Links) ────────────────────────────────
+app.use(express.static(require('path').join(__dirname, '../public')));
+
 // ─── Health Check ─────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
   res.json({
@@ -68,6 +71,16 @@ app.use('/transactions', transactionRoutes);
 app.use('/investments', investmentRoutes);
 app.use('/ai', aiRoutes);
 app.use('/email', emailRoutes);
+
+// ─── App Link pass-through (Android App Links redirect to app) ───────────────
+// These URLs are only visited if the app is not installed; show a fallback page.
+app.get('/app/*', (req, res) => {
+  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>MoneyMind AI</title></head>
+<body style="background:#0A0A1A;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:16px;text-align:center;padding:24px;">
+<p style="font-size:20px;font-weight:700;">MoneyMind AI</p>
+<p style="color:#888;">Please install the MoneyMind AI app to continue.</p>
+</body></html>`);
+});
 
 // ─── 404 Handler ─────────────────────────────────────────────────────────────
 app.use((req, res) => {
