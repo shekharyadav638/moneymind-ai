@@ -1,8 +1,15 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI, {
+    const MONGO_PROTOCOL = process.env.MONGO_PROTOCOL;
+    const MONGO_HOST = process.env.MONGO_HOST;
+    const MONGO_DATABASE = process.env.MONGO_DATABASE;
+    const MONGO_USERNAME = process.env.MONGO_USERNAME;
+    const MONGO_PASSWORD = process.env.MONGO_PASSWORD;
+
+    const MONGO_URI = `${MONGO_PROTOCOL}://${MONGO_USERNAME}:${MONGO_PASSWORD}@${MONGO_HOST}/${MONGO_DATABASE}`;
+    const conn = await mongoose.connect(MONGO_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     });
