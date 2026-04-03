@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { View, ActivityIndicator, StyleSheet, Text } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, Text, Linking } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useAuthStore } from '../../store/authStore';
 import { Colors } from '../../constants/colors';
@@ -10,13 +10,12 @@ import { Colors } from '../../constants/colors';
  * persist them via the auth store, then navigate into the app.
  */
 export default function GoogleCallbackScreen() {
-  const { token, user } = useLocalSearchParams<{ token: string; user: string }>();
+  const params = useLocalSearchParams<{ token: string; user: string }>();
   const { loginWithGoogle } = useAuthStore();
 
   useEffect(() => {
-    const finish = async () => {
+    const finish = async (token: string, user: string) => {
       if (!token || !user) {
-        // Missing params — fall back to login
         router.replace('/(auth)/login');
         return;
       }
@@ -28,8 +27,32 @@ export default function GoogleCallbackScreen() {
         router.replace('/(auth)/login');
       }
     };
-    finish();
-  }, [token, user]);
+
+    // Params may arrive via Expo Router or directly via the deep link URL
+    if (params.token && params.user) {
+      finish(params.token, params.user);
+      return;
+    }
+
+    // Fallback: parse the URL directly (handles cases where Expo Router
+    // doesn't forward query params from custom-scheme deep links)
+    const handleUrl = ({ url }: { url: string }) => {
+      try {
+        const parsed = new URL(url);
+        const token = parsed.searchParams.get('token') ?? '';
+        const user = parsed.searchParams.get('user') ?? '';
+        finish(token, user);
+      } catch {
+        router.replace('/(auth)/login');
+      }
+    };
+
+    Linking.getInitialURL().then((url) => {
+      if (url) handleUrl({ url });
+    });
+    const sub = Linking.addEventListener('url', handleUrl);
+    return () => sub.remove();
+  }, [params.token, params.user]);
 
   return (
     <View style={styles.container}>

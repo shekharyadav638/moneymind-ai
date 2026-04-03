@@ -75,14 +75,16 @@ const handleGmailCallback = async (req, res, next) => {
         gmailConnected: user.gmailConnected,
       }));
 
-      const deepLink = `moneymind://auth/callback?token=${token}&user=${userPayload}`;
+      const deepLink = `moneymind:///callback?token=${token}&user=${userPayload}`;
       return res.send(`<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><title>Signing you in...</title></head>
 <body style="background:#0A0A1A;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:16px;">
   <p style="font-size:18px;">Signing you in to MoneyMind AI...</p>
-  <p style="font-size:13px;color:#888;">If the app doesn't open, <a href="${deepLink}" style="color:#6C63FF;">tap here</a>.</p>
-  <script>window.location.href = "${deepLink}";</script>
+  <a id="deeplink" href="${deepLink}" style="display:none;">open</a>
+  <script>
+    document.getElementById('deeplink').click();
+  </script>
 </body>
 </html>`);
     }
@@ -94,7 +96,7 @@ const handleGmailCallback = async (req, res, next) => {
       gmailTokens: tokens,
     });
 
-    const syncDeepLink = `moneymind://profile?success=true`;
+    const syncDeepLink = `moneymind:///profile?success=true`;
     return res.send(`<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><title>Gmail Connected</title></head>
