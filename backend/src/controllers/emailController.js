@@ -75,8 +75,7 @@ const handleGmailCallback = async (req, res, next) => {
         gmailConnected: user.gmailConnected,
       }));
 
-      const deepLink = `https://moneymind.n8nbyshekhar.online/app/callback?token=${token}&user=${userPayload}`;
-      return res.redirect(deepLink);
+      return res.redirect(`moneymind:///callback?token=${token}&user=${userPayload}`);
     }
 
     // ── Email sync flow (existing behaviour) ────────────────────────────────
@@ -86,7 +85,7 @@ const handleGmailCallback = async (req, res, next) => {
       gmailTokens: tokens,
     });
 
-    return res.redirect(`https://moneymind.n8nbyshekhar.online/app/profile?success=true`);
+    return res.redirect(`moneymind:///profile?success=true`);
   } catch (error) {
     next(error);
   }
